@@ -1,0 +1,37 @@
+# Stateless cluster using Server Profile config.
+# 1 Admin console pod, 1 engine pod
+
+# Ingress definition
+global:
+  envs:
+    PING_IDENTITY_PASSWORD: "2Federate"
+  image:
+    tag: "2207"
+  ingress:
+    enabled: true
+    addReleaseNameToHost: prepend
+    defaultDomain: ping-devops.com
+    defaultTlsSecret:
+    annotations:
+      nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+      kubernetes.io/ingress.class: "nginx-public"
+
+#############################################################
+# pingfederate-admin values
+#############################################################
+pingfederate-admin:
+  enabled: true
+  envs:
+    SERVER_PROFILE_URL: https://github.com/marinoduran-ping/server-profile.git
+    SERVER_PROFILE_PATH: davitajson/pingfederate
+
+# Server profile is a clone of getting-started/pingfederate with configurations for Auth Server, ATM, client and mapping.
+
+#############################################################
+# pingfederate-engine values
+#############################################################
+pingfederate-engine:
+  enabled: true
+  envs:
+    SERVER_PROFILE_URL: https://github.com/marinoduran-ping/server-profile.git
+    SERVER_PROFILE_PATH: davitajson/pingfederate

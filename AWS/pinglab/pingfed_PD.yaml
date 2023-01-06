@@ -1,0 +1,92 @@
+global:
+  ingress:
+    enabled: true
+    addReleaseNameToHost: subdomain
+    defaultDomain: ping-devops.com
+    defaultTlsSecret:
+    annotations:
+      nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+      kubernetes.io/ingress.class: "nginx-public"
+
+pingfederate-admin:
+  enabled: false
+  name: pingfederate-admin
+  image:
+    name: pingfederate
+
+pingfederate-engine:
+  enabled: false
+  name: pingfederate-engine
+  image:
+    name: pingfederate
+
+pingdataconsole:
+  enabled: true
+
+pingdirectory:
+  enabled: true
+  # image:
+  #   repository: nkreadly07
+  #   name: pingdirectory # Set in product section
+  #   tag: localbuild
+  #   pullPolicy: Always
+  # envs:
+  #     MAKELDIF_USERS: "100000"
+  #     TAIL_LOG_FILES: /opt/out/instance/
+
+  envs:
+    SERVER_PROFILE_URL: https://github.com/nkreadly07/pingidentity-server-profiles.git
+    SERVER_PROFILE_PATH: baseline/pingdirectory
+    PARALLEL_POD_MANAGEMENT_POLICY: "true"
+    PD_REBUILD_ON_RESTART: "true"
+    SERVER_PROFILE_UPDATE: "true"
+  container:
+    replicaCount: 2
+    resources:
+      requests:
+        cpu: 1
+        memory: 1.5Gi
+      limits:
+        cpu: 4
+        memory: 4Gi
+
+  persistentvolume:
+    enabled: true
+    volumes:
+      out-pingauth-dir:
+        mountPath: /opt/pauth/
+        persistentVolumeClaim:
+          claimName: pingdirectorylaimname
+          accessModes:
+            - ReadWriteOnce
+          storageClassName:
+          resources:
+            requests:
+              storage: 4Gi
+
+    probes:
+      livenessProbe:
+        exec:
+          command:
+            - /opt/liveness.sh
+        initialDelaySeconds: 30
+        periodSeconds: 30
+        timeoutSeconds: 5
+        successThreshold: 1
+        failureThreshold: 4
+      readinessProbe:
+        exec:
+          command:
+            - /opt/readiness.sh
+        initialDelaySeconds: 30
+        periodSeconds: 30
+        timeoutSeconds: 5
+        successThreshold: 1
+        failureThreshold: 4
+      startupProbe:
+        exec:
+          command:
+            - /opt/liveness.sh
+        periodSeconds: 10
+        timeoutSeconds: 5
+        failureThreshold: 180

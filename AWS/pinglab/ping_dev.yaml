@@ -1,0 +1,647 @@
+global:
+  ingress:
+    enabled: true
+    addReleaseNameToHost: subdomain
+    defaultDomain: ping-devops.com
+    defaultTlsSecret:
+    annotations:
+      nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+      kubernetes.io/ingress.class: "nginx-public"
+  envs:
+    SERVER_PROFILE_URL: https://github.com/nkreadly07/pingidentity-server-profiles.git
+
+#PingDataConsole Configuration
+pingdataconsole:
+  enabled: true
+
+#PingAuthorize Configuration
+pingauthorize:
+  enabled: true
+  envs:
+    SERVER_PROFILE_PATH: baseline/pingauthorize
+  name: pingauthorize
+  image:
+    name: pingauthorize
+
+  container:
+    resources:
+      requests:
+        cpu: 1
+        memory: 1.5Gi
+      limits:
+        cpu: 2
+        memory: 4Gi
+    waitFor:
+      pingdirectory:
+        service: ldaps
+        timeoutSeconds: 300
+
+  workload:
+    type: "StatefulSet"
+    statefulSet:
+      persistentvolume:
+        enabled: true
+
+  persistentvolume:
+    enabled: true
+    volumes:
+      out-pingauthorize-dir:
+        mountPath: /opt/pingauth/
+        persistentVolumeClaim:
+          claimName: pingauthclaimname
+          accessModes:
+            - ReadWriteOnce
+          storageClassName:
+          resources:
+            requests:
+              storage: 4Gi
+
+  services:
+    https:
+      servicePort: 8443
+      containerPort: 8443
+      ingressPort: 443
+      dataService: true
+    ldaps:
+      servicePort: 636
+      containerPort: 1636
+      clusterService: true
+    clusterServiceName: pingauthorize-cluster
+
+  ingress:
+    hosts:
+      - host: pingauthorize._defaultDomain_
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              serviceName: https
+
+#PingAuthorizePAP Configuration
+
+pingauthorizepap:
+  enabled: true
+  name: pingauthorizepap
+  image:
+    name: pingauthorizepap
+
+  container:
+    resources:
+      requests:
+        cpu: 1
+        memory: .75Gi
+      limits:
+        cpu: 2
+        memory: 2Gi
+
+  envs:
+    HTTPS_PORT: "8443"
+
+  services:
+    https:
+      servicePort: 8443
+      containerPort: 8443
+      ingressPort: 443
+      dataService: true
+
+  ingress:
+    hosts:
+      - host: pingauthorizepap._defaultDomain_
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              serviceName: https
+
+#PingDelegator Configuration
+
+pingdelegator:
+  enabled: true
+  name: pingdelegator
+  image:
+    name: pingdelegator
+
+  container:
+    resources:
+      requests:
+        cpu: 0
+        memory: 32Mi
+      limits:
+        cpu: 500m
+        memory: 64Mi
+
+  publicPort: 443
+
+  tokenProvider:
+    port: 9031
+    clientId: dadmin
+
+  pingDirectoryServer:
+    port: 443
+
+  services:
+    https:
+      servicePort: 6443
+      containerPort: 6443
+      ingressPort: 443
+      dataService: true
+
+  ingress:
+    hosts:
+      - host: pingdelegator._defaultDomain_
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              serviceName: https
+
+#PingDirectoryProxy Configuration
+pingdirectoryproxy:
+  enabled: true
+  name: pingdirectoryproxy
+  image:
+    name: pingdirectoryproxy
+
+  workload:
+    type: "StatefulSet"
+    statefulSet:
+      persistentvolume:
+        enabled: false
+
+  container:
+    resources:
+      requests:
+        cpu: 0
+        memory: .75Gi
+      limits:
+        cpu: 2
+        memory: 2Gi
+
+  services:
+    ldaps:
+      servicePort: 636
+      containerPort: 1636
+      clusterService: true
+    https:
+      servicePort: 443
+      containerPort: 1443
+      ingressPort: 443
+      dataService: true
+    clusterServiceName: pingdirectoryproxy-cluster
+
+  ingress:
+    hosts:
+      - host: pingdirectoryproxy._defaultDomain_
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              serviceName: https
+    tls:
+      - secretName: _defaultTlsSecret_
+        hosts:
+          - pingdirectoryproxy._defaultDomain_
+
+#PingDirectory Configuration
+pingdirectory:
+  enabled: true
+  envs:
+    SERVER_PROFILE_PATH: baseline/pingdirectory
+  container:
+    replicaCount: 2
+    resources:
+      requests:
+        cpu: 1
+        memory: 1.5Gi
+      limits:
+        cpu: 4
+        memory: 4Gi
+
+  persistentvolume:
+    enabled: true
+    volumes:
+      out-pingauth-dir:
+        mountPath: /opt/pauth/
+        persistentVolumeClaim:
+          claimName: pingauthclaimname
+          accessModes:
+            - ReadWriteOnce
+          storageClassName:
+          resources:
+            requests:
+              storage: 4Gi
+
+    probes:
+      livenessProbe:
+        exec:
+          command:
+            - /opt/liveness.sh
+        initialDelaySeconds: 100
+        periodSeconds: 30
+        timeoutSeconds: 120
+        successThreshold: 1
+        failureThreshold: 4
+      readinessProbe:
+        exec:
+          command:
+            - /opt/readiness.sh
+        initialDelaySeconds: 30
+        periodSeconds: 5
+        timeoutSeconds: 120
+        successThreshold: 1
+        failureThreshold: 4
+      startupProbe:
+        exec:
+          command:
+            - /opt/liveness.sh
+        periodSeconds: 30
+        timeoutSeconds: 5
+        failureThreshold: 90
+
+#PingDataSync Configuration
+pingdatasync:
+  enabled: true
+  name: pingdatasync
+  image:
+    name: pingdatasync
+
+  workload:
+    type: StatefulSet
+
+  container:
+    resources:
+      requests:
+        cpu: 0
+        memory: .75Gi
+      limits:
+        cpu: 2
+        memory: 2Gi
+
+  services:
+    ldaps:
+      servicePort: 636
+      containerPort: 1636
+      clusterService: true
+    https:
+      servicePort: 443
+      containerPort: 1443
+      ingressPort: 443
+      dataService: true
+    clusterServiceName: pingdatasync-cluster
+
+  ingress:
+    hosts:
+      - host: pingdatasync._defaultDomain_
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              serviceName: https
+    tls:
+      - secretName: _defaultTlsSecret_
+        hosts:
+          - pingdatasync._defaultDomain_
+
+#PingDataGovernance Configuration
+pingdatagovernance:
+  enabled: True
+  envs:
+    SERVER_PROFILE_PATH: baseline/pingdatagovernance
+  name: pingdatagovernance
+  image:
+    name: pingdatagovernance
+
+  container:
+    resources:
+      requests:
+        cpu: 0
+        memory: 1.5Gi
+      limits:
+        cpu: 2
+        memory: 4Gi
+
+  services:
+    https:
+      servicePort: 443
+      containerPort: 1443
+      ingressPort: 443
+      dataService: true
+    ldaps:
+      servicePort: 636
+      containerPort: 1636
+      clusterService: true
+    clusterServiceName: pingdatagovernance-cluster
+
+  ingress:
+    hosts:
+      - host: pingdatagovernance._defaultDomain_
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              serviceName: https
+
+pingdatagovernancepap:
+  enabled: true
+  name: pingdatagovernancepap
+  image:
+    name: pingdatagovernancepap
+
+  container:
+    resources:
+      requests:
+        cpu: 0
+        memory: .75Gi
+      limits:
+        cpu: 2
+        memory: 2Gi
+
+  envs:
+    HTTPS_PORT: "8443"
+  services:
+    https:
+      servicePort: 8443
+      containerPort: 8443
+      ingressPort: 443
+      dataService: true
+
+  ingress:
+    hosts:
+      - host: pingdatagovernancepap._defaultDomain_
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              serviceName: https
+
+#PingAccess Configuration
+pingaccess-admin:
+  enabled: true
+  envs:
+    SERVER_PROFILE_URL: https://github.com/pingidentity/pingidentity-server-profiles.git
+    SERVER_PROFILE_PATH: getting-started/pingaccess
+
+  workload:
+    type: StatefulSet
+
+  container:
+    waitFor:
+      pingfederate-admin:
+        service: https
+        timeoutSeconds: 300
+    resources:
+      requests:
+        cpu: 0
+        memory: 1Gi
+      limits:
+        cpu: 2
+        memory: 4Gi
+
+  services:
+    https:
+      servicePort: 9000
+      containerPort: 9000
+      ingressPort: 443
+      dataService: true
+    clusterconfig:
+      servicePort: 9090
+      containerPort: 9090
+      dataService: true
+
+  ingress:
+    hosts:
+      - host: pingaccess-admin._defaultDomain_
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              serviceName: https
+
+pingaccess-engine:
+  enabled: true
+  envs:
+    SERVER_PROFILE_URL: https://github.com/pingidentity/pingidentity-server-profiles.git
+    SERVER_PROFILE_PATH: getting-started/pingaccess
+
+  container:
+    resources:
+      requests:
+        cpu: 0
+        memory: 1Gi
+      limits:
+        cpu: 2
+        memory: 4Gi
+    waitFor:
+      pingaccess-admin:
+        service: https
+        timeoutSeconds: 300
+
+  services:
+    https:
+      servicePort: 3000
+      containerPort: 3000
+      ingressPort: 443
+      dataService: true
+
+  ingress:
+    hosts:
+      - host: pingaccess-engine._defaultDomain_
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              serviceName: https
+
+pingfederate-admin:
+  enabled: true
+  name: pingfederate-admin
+  image:
+    name: pingfederate
+
+  container:
+    resources:
+      requests:
+        cpu: 0
+        memory: 1Gi
+      limits:
+        cpu: 2
+        memory: 4Gi
+
+  workload:
+    deployment:
+      strategy:
+        type: Recreate
+
+    # Example: If PingFederate Admin relies on pingdirectory for AuthN
+    #          Creates init container wait-for on pingdirectory ldaps service
+    #
+    container:
+      waitFor:
+        pingdirectory:
+          service: ldaps
+          timeoutSeconds: 300
+
+  # Example: Pulling in a secret (called pingfederate-license) into container
+  #          mounting the name (license) value into a file (/opt/in/.../pingfederate.lic)
+  #
+  # secretVolumes:
+  #   pingfederate-license:
+  #     items:
+  #       license: /opt/in/instance/server/default/conf/pingfederate.lic
+
+  # Example: Pulling in a configMap (called pingfederate-props) into container
+  #          mounting the name (pf-props) value into a file (/opt/in/.../pingfederate.properties)
+  #
+  # configMapVolumes:
+  #  pingfederate-props:
+  #     items:
+  #       pf-props: /opt/in/etc/pingfederate.properties
+
+  services:
+    https:
+      servicePort: 9999
+      containerPort: 9999
+      ingressPort: 443
+      dataService: true
+    clusterbind:
+      servicePort: 7600
+      containerPort: 7600
+      clusterService: true
+    clusterfail:
+      servicePort: 7700
+      containerPort: 7700
+      clusterService: true
+    clusterServiceName: pingfederate-cluster
+
+  ingress:
+    hosts:
+      - host: pingfederate-admin._defaultDomain_
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              serviceName: https
+    tls:
+      - secretName: _defaultTlsSecret_
+        hosts:
+          - pingfederate-admin._defaultDomain_
+
+#############################################################
+# @param    pingfederate-engine PingFederate engine values
+#
+# @param    pingfederate-engine.enabled Enable PingFederate engine deployment
+# @default  false
+#############################################################
+pingfederate-engine:
+  enabled: true
+  name: pingfederate-engine
+  image:
+    name: pingfederate
+
+  container:
+    resources:
+      requests:
+        cpu: 0
+        memory: 1Gi
+      limits:
+        cpu: 2
+        memory: 4Gi
+    waitFor:
+      pingfederate-admin:
+        service: https
+        timeoutSeconds: 300
+
+  envs:
+    PF_ADMIN_PORT: "9999"
+
+  #############################################################
+  # Horizontal Pod Autoscaling
+  # By default this is disabled, since there dependencies to the containers
+  # CPU and/or Memory limits.
+  #
+  # @param    pingfederate-engine.clustering.autoscaling Configure Horizontal Pod Autoscaling
+  #
+  # @param    pingfederate-engine.clustering.autoscaling.enabled Enable Horizontal Pod Autoscaling.
+  # @desc     If enabled, ensure that proper pingfederate.container.resources values are set and
+  # @desc     coordinated with the targetCPUUtilizationPercentage or targetMemoryUtilizationPercentage
+  # @default  false
+  #
+  # @param    pingfederate-engine.clustering.autoscaling.minReplicas Autoscaler minimum replicas
+  # @default  1
+  #
+  # @param    pingfederate-engine.clustering.autoscaling.maxReplicas Autoscaler maximum replicas
+  # @default  4
+  #
+  # @param    pingfederate-engine.clustering.autoscaling.targetCPUUtilizationPercentage Target CPU utilization
+  # @default  75
+  #
+  # @param    pingfederate-engine.clustering.autoscaling.targetMemoryUtilizationPercentage Target memory utilization
+  #
+  # @param    pingfederate-engine.clustering.autoscaling.behavior Custom HPA behavior yaml
+  # @default  {}
+  #
+  # @param    pingfederate-engine.clustering.autoscalingMetricsTemplate Custom HPA metrics yaml
+  # @default  []
+  #############################################################
+  clustering:
+    autoscaling:
+      enabled: false
+      minReplicas: 1
+      maxReplicas: 4
+      targetCPUUtilizationPercentage: 75
+      # targetMemoryUtilizationPercentage: 50
+      behavior: {}
+      # Custom Horizontal Pod Scaling behavior
+      # ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#default-behavior
+      #  scaleDown:
+      #    stabilizationWindowSeconds: 300
+      #    policies:
+      #    - type: Percent
+      #      value: 100
+      #      periodSeconds: 15
+      #  scaleUp:
+      #    stabilizationWindowSeconds: 0
+      #    policies:
+      #    - type: Percent
+      #      value: 100
+      #      periodSeconds: 15
+      #    - type: Pods
+      #      value: 4
+      #      periodSeconds: 15
+      #    selectPolicy: Max
+
+    autoscalingMetricsTemplate: []
+    # Custom or additional autoscaling metrics
+    # ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#support-for-custom-metrics
+    # - type: Pods
+    #   pods:
+    #     metric:
+    #       name: custom-metric
+    #     target:
+    #       type: AverageValue
+    #       averageValue: 10000m
+
+  services:
+    https:
+      servicePort: 9031
+      containerPort: 9031
+      ingressPort: 443
+      dataService: true
+    clusterbind:
+      servicePort: 7600
+      containerPort: 7600
+      clusterService: true
+    clusterfail:
+      servicePort: 7700
+      containerPort: 7700
+      clusterService: true
+    clusterServiceName: pingfederate-cluster
+
+  ingress:
+    hosts:
+      - host: pingfederate-engine._defaultDomain_
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              serviceName: https

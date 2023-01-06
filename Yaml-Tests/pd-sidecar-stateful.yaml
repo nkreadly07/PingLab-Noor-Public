@@ -1,0 +1,109 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    app.kubernetes.io/name: pingdirectory
+  name: sidecar-pingdirectory
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: pingdirectory
+  serviceName: sidecar-pingdirectory-cluster
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: pingdirectory
+    spec:
+      containers:
+        - envFrom:
+            - secretRef:
+                name: devops-secret
+                optional: true
+          image: pingidentity/pingdirectory:latest
+          livenessProbe:
+            exec:
+              command:
+                - /opt/liveness.sh
+            failureThreshold: 4
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            successThreshold: 1
+            timeoutSeconds: 5
+          name: pingdirectory
+          ports:
+            - containerPort: 1443
+              name: https
+            - containerPort: 1389
+              name: ldap
+            - containerPort: 1636
+              name: ldaps
+          readinessProbe:
+            exec:
+              command:
+                - /opt/readiness.sh
+            failureThreshold: 4
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            successThreshold: 1
+            timeoutSeconds: 5
+          resources:
+            limits:
+              cpu: 2
+              memory: 8Gi
+            requests:
+              cpu: 50m
+              memory: 2Gi
+          startupProbe:
+            exec:
+              command:
+                - /opt/liveness.sh
+            failureThreshold: 180
+            periodSeconds: 10
+            timeoutSeconds: 5
+          volumeMounts:
+            - mountPath: /tmp
+              name: temp
+            - mountPath: /opt/out
+              name: out-dir
+        - args:
+            - -f
+            - /dev/null
+          command:
+            - tail
+          image: pingidentity/pingdirectory:latest
+          name: utility-sidecar
+          resources:
+            limits:
+              cpu: "1"
+              memory: 2Gi
+            requests:
+              cpu: "0"
+              memory: 128Mi
+          volumeMounts:
+            - mountPath: /opt/out
+              name: out-dir
+            - mountPath: /tmp
+              name: temp
+      securityContext:
+        fsGroup: 0
+        runAsGroup: 0
+        runAsUser: 9031
+      shareProcessNamespace: true
+      terminationGracePeriodSeconds: 300
+      volumes:
+        - emptyDir: {}
+          name: temp
+        - name: out-dir
+          persistentVolumeClaim:
+            claimName: out-dir
+  volumeClaimTemplates:
+    - metadata:
+        name: out-dir
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 8Gi
+        storageClassName: null
